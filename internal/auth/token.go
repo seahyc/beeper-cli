@@ -75,6 +75,3 @@ func (t *TokenData) Clear() error {
 	*t = TokenData{}
 	return os.Remove(tokenFilePath())
 }
-
-// EnsureValidToken is a stub — replaced by oauth.go in Task 3.
-func EnsureValidToken(baseURL string) {}
