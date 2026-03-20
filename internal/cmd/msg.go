@@ -50,10 +50,14 @@ var msgSendCmd = &cobra.Command{
 		client := api.NewClient(getBaseURL())
 		text, _ := cmd.Flags().GetString("text")
 		filePath, _ := cmd.Flags().GetString("file")
+		replyTo, _ := cmd.Flags().GetString("reply-to")
 
 		body := map[string]interface{}{}
 		if text != "" {
 			body["text"] = text
+		}
+		if replyTo != "" {
+			body["replyToMessageID"] = replyTo
 		}
 
 		if filePath != "" {
@@ -218,6 +222,7 @@ func init() {
 
 	msgSendCmd.Flags().String("text", "", "Message text")
 	msgSendCmd.Flags().String("file", "", "File path to upload and attach")
+	msgSendCmd.Flags().String("reply-to", "", "Message ID to reply to")
 	msgSendCmd.Flags().String("attach-type", "", "Attachment type override")
 	msgSendCmd.Flags().String("filename", "", "Override attachment filename")
 	msgSendCmd.Flags().String("mime", "", "Override attachment MIME type")
