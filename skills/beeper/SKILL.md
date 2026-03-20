@@ -1,5 +1,5 @@
 ---
-name: claw-me-maybe
+name: beeper
 description: >
   Send messages and search chats across WhatsApp, Telegram, Signal, Discord, Slack,
   Instagram, iMessage, LinkedIn, Facebook Messenger, Google Messages via Beeper Desktop API.
