@@ -47,6 +47,10 @@ func (c *Client) Delete(path string, result interface{}) error {
 	return c.doRequest("DELETE", path, nil, result, true)
 }
 
+func (c *Client) DeleteWithBody(path string, body, result interface{}) error {
+	return c.doRequest("DELETE", path, body, result, true)
+}
+
 func (c *Client) doRequest(method, path string, body, result interface{}, needsAuth bool) error {
 	return c.doRequestInner(method, path, body, result, needsAuth, false)
 }

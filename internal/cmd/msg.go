@@ -196,14 +196,15 @@ var msgReactCmd = &cobra.Command{
 }
 
 var msgUnreactCmd = &cobra.Command{
-	Use:   "unreact <chatID> <msgID>",
+	Use:   "unreact <chatID> <msgID> <emoji>",
 	Short: "Remove reaction from a message",
-	Args:  cobra.ExactArgs(2),
+	Args:  cobra.ExactArgs(3),
 	Run: func(cmd *cobra.Command, args []string) {
 		client := api.NewClient(getBaseURL())
 		path := fmt.Sprintf("/v1/chats/%s/messages/%s/reactions", args[0], args[1])
+		body := map[string]interface{}{"reactionKey": args[2]}
 		var result interface{}
-		if err := client.Delete(path, &result); err != nil {
+		if err := client.DeleteWithBody(path, body, &result); err != nil {
 			output.Fatal("API_ERROR", err)
 		}
 		output.JSON(result)
