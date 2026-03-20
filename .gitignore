@@ -1,4 +1,4 @@
-beeper
+/beeper
 *.exe
 .env
 .DS_Store
