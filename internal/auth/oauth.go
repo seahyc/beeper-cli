@@ -3,6 +3,9 @@ package auth
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -112,13 +115,25 @@ func startCallbackServer() (string, <-chan string, func(), error) {
 	return redirectURI, codeChan, cleanup, nil
 }
 
-func exchangeCode(tokenEndpoint, code, redirectURI, clientID, clientSecret string) (*tokenResponse, error) {
+func generatePKCE() (verifier, challenge string, err error) {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", "", err
+	}
+	verifier = base64.RawURLEncoding.EncodeToString(buf)
+	h := sha256.Sum256([]byte(verifier))
+	challenge = base64.RawURLEncoding.EncodeToString(h[:])
+	return verifier, challenge, nil
+}
+
+func exchangeCode(tokenEndpoint, code, redirectURI, clientID, clientSecret, codeVerifier string) (*tokenResponse, error) {
 	data := url.Values{
 		"grant_type":    {"authorization_code"},
 		"code":          {code},
 		"redirect_uri":  {redirectURI},
 		"client_id":     {clientID},
 		"client_secret": {clientSecret},
+		"code_verifier": {codeVerifier},
 	}
 	resp, err := http.PostForm(tokenEndpoint, data)
 	if err != nil {
@@ -190,10 +205,16 @@ func doFullAuthFlow(baseURL string) error {
 		token.ClientSecret = reg.ClientSecret
 	}
 
-	authURL := fmt.Sprintf("%s?response_type=code&client_id=%s&redirect_uri=%s",
+	codeVerifier, codeChallenge, err := generatePKCE()
+	if err != nil {
+		return fmt.Errorf("failed to generate PKCE: %w", err)
+	}
+
+	authURL := fmt.Sprintf("%s?response_type=code&client_id=%s&redirect_uri=%s&code_challenge=%s&code_challenge_method=S256",
 		info.Endpoints.OAuth.AuthorizationEndpoint,
 		url.QueryEscape(token.ClientID),
 		url.QueryEscape(redirectURI),
+		url.QueryEscape(codeChallenge),
 	)
 
 	fmt.Println("First run — opening browser for Beeper authorization...")
@@ -204,7 +225,7 @@ func doFullAuthFlow(baseURL string) error {
 	// Wait for callback (timeout after 2 minutes)
 	select {
 	case code := <-codeChan:
-		tok, err := exchangeCode(info.Endpoints.OAuth.TokenEndpoint, code, redirectURI, token.ClientID, token.ClientSecret)
+		tok, err := exchangeCode(info.Endpoints.OAuth.TokenEndpoint, code, redirectURI, token.ClientID, token.ClientSecret, codeVerifier)
 		if err != nil {
 			return err
 		}
