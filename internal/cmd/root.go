@@ -24,7 +24,7 @@ func Execute() {
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&baseURL, "url", "http://localhost:23373", "Beeper Desktop API base URL")
-	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(versionCmd, infoCmd, authCmd)
 	if envURL := os.Getenv("BEEPER_URL"); envURL != "" && !rootCmd.PersistentFlags().Changed("url") {
 		baseURL = envURL
 	}
