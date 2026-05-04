@@ -14,6 +14,12 @@ var msgCmd = &cobra.Command{
 	Short: "Message commands",
 }
 
+// encodeChatID URL-encodes a chat ID for use in URL paths.
+// Beeper chat IDs contain '!' and ':' which must be percent-encoded.
+func encodeChatID(id string) string {
+	return url.PathEscape(id)
+}
+
 var msgListCmd = &cobra.Command{
 	Use:   "list <chatID>",
 	Short: "List messages in a chat",
@@ -30,7 +36,7 @@ var msgListCmd = &cobra.Command{
 		if v, _ := cmd.Flags().GetString("direction"); v != "" {
 			params.Set("direction", v)
 		}
-		path := fmt.Sprintf("/v1/chats/%s/messages", args[0])
+		path := fmt.Sprintf("/v1/chats/%s/messages", encodeChatID(args[0]))
 		if len(params) > 0 {
 			path += "?" + params.Encode()
 		}
@@ -101,7 +107,7 @@ var msgSendCmd = &cobra.Command{
 			output.Fatal("VALIDATION_ERROR", fmt.Errorf("--text or --file is required"))
 		}
 
-		path := fmt.Sprintf("/v1/chats/%s/messages", args[0])
+		path := fmt.Sprintf("/v1/chats/%s/messages", encodeChatID(args[0]))
 		var result interface{}
 		if err := client.Post(path, body, &result); err != nil {
 			output.Fatal("API_ERROR", err)
@@ -120,7 +126,7 @@ var msgEditCmd = &cobra.Command{
 		if text == "" {
 			output.Fatal("VALIDATION_ERROR", fmt.Errorf("--text is required"))
 		}
-		path := fmt.Sprintf("/v1/chats/%s/messages/%s", args[0], args[1])
+		path := fmt.Sprintf("/v1/chats/%s/messages/%s", encodeChatID(args[0]), url.PathEscape(args[1]))
 		body := map[string]interface{}{"text": text}
 		var result interface{}
 		if err := client.Put(path, body, &result); err != nil {
@@ -189,7 +195,7 @@ var msgReactCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(3),
 	Run: func(cmd *cobra.Command, args []string) {
 		client := api.NewClient(getBaseURL())
-		path := fmt.Sprintf("/v1/chats/%s/messages/%s/reactions", args[0], args[1])
+		path := fmt.Sprintf("/v1/chats/%s/messages/%s/reactions", encodeChatID(args[0]), url.PathEscape(args[1]))
 		body := map[string]interface{}{"reactionKey": args[2]}
 		var result interface{}
 		if err := client.Post(path, body, &result); err != nil {
@@ -205,7 +211,7 @@ var msgUnreactCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(3),
 	Run: func(cmd *cobra.Command, args []string) {
 		client := api.NewClient(getBaseURL())
-		path := fmt.Sprintf("/v1/chats/%s/messages/%s/reactions", args[0], args[1])
+		path := fmt.Sprintf("/v1/chats/%s/messages/%s/reactions", encodeChatID(args[0]), url.PathEscape(args[1]))
 		body := map[string]interface{}{"reactionKey": args[2]}
 		var result interface{}
 		if err := client.DeleteWithBody(path, body, &result); err != nil {
