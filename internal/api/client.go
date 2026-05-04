@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/yjwong/beeper-cli/internal/auth"
@@ -168,16 +171,28 @@ func (c *Client) UploadFile(path, filePath string, result interface{}) error {
 	return nil
 }
 
-// DownloadFile downloads a file and saves to disk
-func (c *Client) DownloadFile(path string, body interface{}, outputPath string) (string, error) {
+type DownloadResult struct {
+	SourceURL  string
+	SavedPath  string
+	SourcePath string
+}
+
+type ServeResult struct {
+	ContentType string
+	SavedPath   string
+	Size        int64
+}
+
+// DownloadFile resolves a Beeper asset to a local file and optionally copies it to outputPath.
+func (c *Client) DownloadFile(path string, body interface{}, outputPath string) (*DownloadResult, error) {
 	data, err := json.Marshal(body)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	req, err := http.NewRequest("POST", c.baseURL+path, bytes.NewReader(data))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
@@ -189,26 +204,220 @@ func (c *Client) DownloadFile(path string, body interface{}, outputPath string) 
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if resp.StatusCode >= 400 {
-		return "", fmt.Errorf("download failed %d: %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("download failed %d: %s", resp.StatusCode, string(respBody))
 	}
 
-	// The download endpoint returns JSON with a local file URL
+	// The download endpoint returns JSON with a local file URL.
 	var downloadResp struct {
-		URL string `json:"url"`
+		URL    string `json:"url"`
+		SrcURL string `json:"srcURL"`
 	}
 	if err := json.Unmarshal(respBody, &downloadResp); err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return downloadResp.URL, nil
+	sourceURL := downloadResp.URL
+	if sourceURL == "" {
+		sourceURL = downloadResp.SrcURL
+	}
+	if sourceURL == "" {
+		return nil, fmt.Errorf("download response did not include a file URL")
+	}
+
+	sourcePath, err := filePathFromURL(sourceURL)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(sourcePath); err != nil {
+		return nil, fmt.Errorf("download source does not exist: %w", err)
+	}
+
+	savedPath := sourcePath
+	if outputPath != "" {
+		savedPath, err = resolveDownloadOutputPath(outputPath, sourcePath)
+		if err != nil {
+			return nil, err
+		}
+		if err := copyFile(sourcePath, savedPath); err != nil {
+			return nil, err
+		}
+	}
+
+	return &DownloadResult{
+		SourceURL:  sourceURL,
+		SourcePath: sourcePath,
+		SavedPath:  savedPath,
+	}, nil
+}
+
+// ServeAsset fetches the rendered bytes from Beeper's asset serve endpoint and saves them locally.
+func (c *Client) ServeAsset(path string, outputPath string) (*ServeResult, error) {
+	req, err := http.NewRequest("GET", c.baseURL+path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	token := auth.GetToken()
+	if !token.IsValid() {
+		auth.EnsureValidToken(c.baseURL)
+	}
+	req.Header.Set("Authorization", "Bearer "+token.AccessToken)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("serve failed %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = http.DetectContentType(respBody)
+	}
+
+	savedPath, err := resolveServeOutputPath(outputPath, contentType)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(savedPath, respBody, 0o644); err != nil {
+		return nil, err
+	}
+
+	return &ServeResult{
+		ContentType: contentType,
+		SavedPath:   savedPath,
+		Size:        int64(len(respBody)),
+	}, nil
+}
+
+func filePathFromURL(rawURL string) (string, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid download URL: %w", err)
+	}
+	if parsed.Scheme != "file" {
+		return "", fmt.Errorf("unsupported download URL scheme %q", parsed.Scheme)
+	}
+
+	path, err := url.PathUnescape(parsed.Path)
+	if err != nil {
+		return "", fmt.Errorf("invalid escaped download path: %w", err)
+	}
+	if path == "" {
+		return "", fmt.Errorf("download URL did not include a file path")
+	}
+	return path, nil
+}
+
+func resolveDownloadOutputPath(outputPath, sourcePath string) (string, error) {
+	info, err := os.Stat(outputPath)
+	if err == nil {
+		if info.IsDir() {
+			return filepath.Join(outputPath, filepath.Base(sourcePath)), nil
+		}
+		return outputPath, nil
+	}
+	if !os.IsNotExist(err) {
+		return "", fmt.Errorf("failed to inspect output path: %w", err)
+	}
+
+	// Treat paths with a trailing separator as directories even before they exist.
+	if strings.HasSuffix(outputPath, string(os.PathSeparator)) {
+		if err := os.MkdirAll(outputPath, 0o755); err != nil {
+			return "", fmt.Errorf("failed to create output directory: %w", err)
+		}
+		return filepath.Join(outputPath, filepath.Base(sourcePath)), nil
+	}
+
+	parentDir := filepath.Dir(outputPath)
+	if parentDir != "." {
+		if err := os.MkdirAll(parentDir, 0o755); err != nil {
+			return "", fmt.Errorf("failed to create parent directory: %w", err)
+		}
+	}
+	return outputPath, nil
+}
+
+func resolveServeOutputPath(outputPath, contentType string) (string, error) {
+	if outputPath != "" {
+		if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
+			return "", fmt.Errorf("failed to create output directory: %w", err)
+		}
+		return outputPath, nil
+	}
+
+	exts := preferredExtensionsForContentType(contentType)
+	pattern := "beeper-asset-*"
+	if len(exts) > 0 {
+		pattern += exts[0]
+	}
+
+	f, err := os.CreateTemp("", pattern)
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp file: %w", err)
+	}
+	path := f.Name()
+	if err := f.Close(); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+func preferredExtensionsForContentType(contentType string) []string {
+	baseType := strings.TrimSpace(strings.Split(contentType, ";")[0])
+	switch baseType {
+	case "video/mp4":
+		return []string{".mp4"}
+	case "image/jpeg":
+		return []string{".jpg"}
+	case "image/png":
+		return []string{".png"}
+	case "application/pdf":
+		return []string{".pdf"}
+	}
+
+	exts, _ := mime.ExtensionsByType(baseType)
+	return exts
+}
+
+func copyFile(sourcePath, destPath string) error {
+	sourceFile, err := os.Open(sourcePath)
+	if err != nil {
+		return fmt.Errorf("failed to open downloaded file: %w", err)
+	}
+	defer sourceFile.Close()
+
+	destFile, err := os.Create(destPath)
+	if err != nil {
+		return fmt.Errorf("failed to create output file: %w", err)
+	}
+	defer func() {
+		_ = destFile.Close()
+	}()
+
+	if _, err := io.Copy(destFile, sourceFile); err != nil {
+		return fmt.Errorf("failed to copy downloaded file: %w", err)
+	}
+	if err := destFile.Close(); err != nil {
+		return fmt.Errorf("failed to finalize output file: %w", err)
+	}
+	return nil
 }

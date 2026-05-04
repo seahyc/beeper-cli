@@ -31,37 +31,47 @@ Send messages and manage chats across all messaging platforms via the `beeper` C
 
 **Send message:**
 ```bash
-beeper msg send '!chatID:beeper.local' --text "Hello!"
+beeper msg send "!chatID:beeper.local" --text "Hello!"
 ```
 
 **Send with attachment:**
 ```bash
-beeper msg send '!chatID:beeper.local' --text "See attached" --file ./photo.jpg
+beeper msg send "!chatID:beeper.local" --text "See attached" --file ./photo.jpg
 ```
 
 **List messages:**
 ```bash
-beeper msg list '!chatID:beeper.local' --limit 10
+beeper msg list "!chatID:beeper.local" --limit 10
 ```
 
 **Search messages:**
 ```bash
-beeper msg search "keyword" --chat '!chatID:beeper.local' --limit 20
+beeper msg search "keyword" --chat "!chatID:beeper.local" --limit 20
+```
+
+**Download media to a specific file:**
+```bash
+beeper asset download "mxc://beeper.local/abc123" --output "./invoice.pdf"
+```
+
+**Download media into a directory using the original filename:**
+```bash
+beeper asset download "mxc://beeper.local/abc123" --output "./downloads/"
 ```
 
 **React to message:**
 ```bash
-beeper msg react '!chatID:beeper.local' 'msgID' '👍'
+beeper msg react "!chatID:beeper.local" "msgID" '👍'
 ```
 
 **Remove reaction:**
 ```bash
-beeper msg unreact '!chatID:beeper.local' 'msgID'
+beeper msg unreact "!chatID:beeper.local" "msgID"
 ```
 
 **Edit message:**
 ```bash
-beeper msg edit '!chatID:beeper.local' 'msgID' --text "Updated text"
+beeper msg edit "!chatID:beeper.local" "msgID" --text "Updated text"
 ```
 
 ## Commands Reference
@@ -93,22 +103,23 @@ beeper contact list <accountID>              # List contacts
 ### Chats
 ```bash
 beeper chat list --limit 10 --account <id> --type dm --unread --inbox
-beeper chat get '!chatID:beeper.local' --max-participants 10
+beeper chat get "!chatID:beeper.local" --max-participants 10
 beeper chat search "query" --scope titles --type group --limit 10
-beeper chat create --account <id> --type dm --phone "+1234567890" --message "Hi"
+beeper chat create --account <id> --type single --phone "+1234567890" --message "Hi"
+beeper chat create --account <id> --type single --participants "userId" --message "Hi"
 beeper chat create --account <id> --type group --title "Team" --participants "id1,id2"
-beeper chat archive '!chatID:beeper.local'
-beeper chat unarchive '!chatID:beeper.local'
+beeper chat archive "!chatID:beeper.local"
+beeper chat unarchive "!chatID:beeper.local"
 ```
 
 ### Messages
 ```bash
-beeper msg list '!chatID' --limit 20 --cursor <cur> --direction before
-beeper msg send '!chatID' --text "Hello" --file ./image.png --attach-type image --filename custom.png --mime image/png
-beeper msg edit '!chatID' 'msgID' --text "Edited"
-beeper msg search "query" --chat '!chatID' --account <id> --sender <id> --media --after 2024-01-01 --before 2024-12-31 --limit 20
-beeper msg react '!chatID' 'msgID' '🎉'
-beeper msg unreact '!chatID' 'msgID'
+beeper msg list "!chatID" --limit 20 --cursor <cur> --direction before
+beeper msg send "!chatID" --text "Hello" --file ./image.png --attach-type image --filename custom.png --mime image/png
+beeper msg edit "!chatID" "msgID" --text "Edited"
+beeper msg search "query" --chat "!chatID" --account <id> --sender <id> --media --after 2024-01-01 --before 2024-12-31 --limit 20
+beeper msg react "!chatID" "msgID" '🎉'
+beeper msg unreact "!chatID" "msgID"
 ```
 
 ### Unified Search
@@ -120,20 +131,23 @@ beeper search "query"          # Search across chats and messages
 ```bash
 beeper asset upload ./file.jpg                    # Upload file
 beeper asset upload-base64 --content <b64> --filename img.png --mime image/png
-beeper asset download <mxc://url> --output ./dir  # Download media
-beeper asset serve --url <mxc://url>              # Get serve URL
+beeper asset download <mxc://url>                 # Resolve to Beeper's local cached file
+beeper asset download <mxc://url> --output ./invoice.pdf
+beeper asset download <mxc://url> --output ./downloads/
+beeper asset serve --url <mxc://url>              # Fetch rendered bytes and save to a local temp file
+beeper asset serve --url <mxc://url> --output ./preview.jpg
 ```
 
 ### Reminders
 ```bash
-beeper reminder set '!chatID' --at "2024-03-20T10:00:00Z" --dismiss-on-reply
-beeper reminder clear '!chatID'
+beeper reminder set "!chatID" --at "2024-03-20T10:00:00Z" --dismiss-on-reply
+beeper reminder clear "!chatID"
 ```
 
 ### Focus
 ```bash
-beeper focus --chat '!chatID'                     # Focus Beeper on chat
-beeper focus --chat '!chatID' --message 'msgID'   # Focus on specific message
+beeper focus --chat "!chatID"                     # Focus Beeper on chat
+beeper focus --chat "!chatID" --message "msgID"   # Focus on specific message
 beeper focus --draft "prefilled text"             # Open with draft text
 beeper focus --draft-file ./message.txt           # Open with draft from file
 ```
@@ -146,21 +160,27 @@ beeper focus --draft-file ./message.txt           # Open with draft from file
 beeper account list
 # 2. Search contacts on that account
 beeper contact search "accountID" "John"
-# 3. Create a DM
-beeper chat create --account "accountID" --type dm --phone "+1234567890" --message "Hey!"
+# 3. Create a DM (use --participants with the contact ID, or --phone/--username)
+beeper chat create --account "accountID" --type single --participants "contactId" --message "Hey!"
 ```
 
 ### Download media from a chat
 ```bash
 # 1. List messages to find one with attachment
-beeper msg list '!chatID:beeper.local' --limit 5
-# 2. Download the media URL from the message
-beeper asset download "mxc://beeper.local/abc123"
+beeper msg list "!chatID:beeper.local" --limit 5
+# 2. Download the media URL from the message into a directory
+beeper asset download "mxc://beeper.local/abc123" --output ./downloads/
+```
+
+### Render encrypted media into a viewable local file
+```bash
+# Useful when srcURL is an encrypted mxc:// URL and you want actual bytes on disk
+beeper asset serve --url "mxc://beeper.local/abc123?encryptedFileInfoJSON=..." --output ./preview.jpg
 ```
 
 ### Send a photo with caption
 ```bash
-beeper msg send '!chatID:beeper.local' --text "Check this out!" --file ./photo.jpg
+beeper msg send "!chatID:beeper.local" --text "Check this out!" --file ./photo.jpg
 ```
 
 ## Error Handling
@@ -183,7 +203,13 @@ Common codes:
 
 ## Important Notes
 
-- Chat IDs look like `!abc123:beeper.local` — always quote them in shell commands
+- Chat IDs look like `!abc123:beeper.local` — the CLI handles URL-encoding internally, so both single and double quotes work in shell commands
+- `beeper asset download` prints `url`, `sourcePath`, and `savedPath`; if you omit `--output`, `savedPath` is the cached local Beeper file
+- `beeper asset download` understands both Beeper response shapes: `url` and `srcURL`
+- `beeper asset serve` writes served bytes to disk and returns `savedPath`, `contentType`, and `size`; if `--output` is omitted, it uses a temp file
+- `--output` accepts either an explicit file path or a directory path. If you want directory behavior for a new directory, end it with a trailing slash such as `./downloads/`
+- `beeper msg search --limit` is effectively capped by the Beeper Desktop API at `20`
+- When editing messages, use the **numeric message ID** from `msg list` (e.g. `29463`), not the `pendingMessageID` returned by `msg send` (e.g. `~beeper-mautrix-go_...`). The pending ID is temporary and won't resolve for edits.
 - The `--url` global flag or `BEEPER_URL` env var overrides the default `http://localhost:23373`
 - Beeper Desktop must be running for any command to work
 - First authenticated command will open browser for OAuth — subsequent commands use cached token

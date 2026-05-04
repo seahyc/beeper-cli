@@ -63,17 +63,21 @@ var assetDownloadCmd = &cobra.Command{
 		client := api.NewClient(getBaseURL())
 		body := map[string]string{"url": args[0]}
 		outputPath, _ := cmd.Flags().GetString("output")
-		localURL, err := client.DownloadFile("/v1/assets/download", body, outputPath)
+		result, err := client.DownloadFile("/v1/assets/download", body, outputPath)
 		if err != nil {
 			output.Fatal("API_ERROR", err)
 		}
-		output.JSON(map[string]string{"url": localURL})
+		output.JSON(map[string]string{
+			"url":        result.SourceURL,
+			"sourcePath": result.SourcePath,
+			"savedPath":  result.SavedPath,
+		})
 	},
 }
 
 var assetServeCmd = &cobra.Command{
 	Use:   "serve",
-	Short: "Get serve URL for a media file",
+	Short: "Fetch served media bytes into a local file",
 	Run: func(cmd *cobra.Command, args []string) {
 		mxcURL, _ := cmd.Flags().GetString("url")
 		if mxcURL == "" {
@@ -81,11 +85,16 @@ var assetServeCmd = &cobra.Command{
 		}
 		client := api.NewClient(getBaseURL())
 		path := fmt.Sprintf("/v1/assets/serve?url=%s", url.QueryEscape(mxcURL))
-		var result interface{}
-		if err := client.Get(path, &result); err != nil {
+		outputPath, _ := cmd.Flags().GetString("output")
+		result, err := client.ServeAsset(path, outputPath)
+		if err != nil {
 			output.Fatal("API_ERROR", err)
 		}
-		output.JSON(result)
+		output.JSON(map[string]interface{}{
+			"contentType": result.ContentType,
+			"savedPath":   result.SavedPath,
+			"size":        result.Size,
+		})
 	},
 }
 
@@ -94,9 +103,10 @@ func init() {
 	assetUploadBase64Cmd.Flags().String("filename", "", "Filename")
 	assetUploadBase64Cmd.Flags().String("mime", "", "MIME type")
 
-	assetDownloadCmd.Flags().String("output", "", "Output file path")
+	assetDownloadCmd.Flags().String("output", "", "Output path. If it is an existing directory, or ends with a path separator, the original filename is used inside that directory.")
 
 	assetServeCmd.Flags().String("url", "", "mxc://, localmxc://, or file:// URL (required)")
+	assetServeCmd.Flags().String("output", "", "Optional output path for served bytes. Defaults to a temp file.")
 
 	assetCmd.AddCommand(assetUploadCmd, assetUploadBase64Cmd, assetDownloadCmd, assetServeCmd)
 }
