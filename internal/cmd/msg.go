@@ -130,7 +130,7 @@ var msgSendCmd = &cobra.Command{
 				MimeType string `json:"mimeType"`
 				Width    int    `json:"width"`
 				Height   int    `json:"height"`
-				Duration int    `json:"duration"`
+				Duration float64 `json:"duration"`
 			}
 			if err := client.UploadFile("/v1/assets/upload", filePath, &uploadResult); err != nil {
 				output.Fatal("UPLOAD_ERROR", err)
