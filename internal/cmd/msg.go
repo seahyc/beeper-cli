@@ -2,7 +2,16 @@ package cmd
 
 import (
 	"fmt"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
+	"mime"
+	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/yjwong/beeper-cli/internal/api"
@@ -18,6 +27,49 @@ var msgCmd = &cobra.Command{
 // Beeper chat IDs contain '!' and ':' which must be percent-encoded.
 func encodeChatID(id string) string {
 	return url.PathEscape(id)
+}
+
+type localMediaMetadata struct {
+	FileName string
+	MimeType string
+	Width    int
+	Height   int
+}
+
+func sniffLocalMediaMetadata(filePath string) (*localMediaMetadata, error) {
+	meta := &localMediaMetadata{
+		FileName: filepath.Base(filePath),
+		MimeType: mime.TypeByExtension(strings.ToLower(filepath.Ext(filePath))),
+	}
+
+	f, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	header := make([]byte, 512)
+	n, err := f.Read(header)
+	if err != nil && err.Error() != "EOF" {
+		return nil, err
+	}
+	header = header[:n]
+
+	if detected := http.DetectContentType(header); detected != "" && detected != "application/octet-stream" {
+		meta.MimeType = detected
+	}
+	if meta.MimeType == "" {
+		meta.MimeType = "application/octet-stream"
+	}
+
+	if _, err := f.Seek(0, 0); err == nil {
+		if cfg, _, err := image.DecodeConfig(f); err == nil {
+			meta.Width = cfg.Width
+			meta.Height = cfg.Height
+		}
+	}
+
+	return meta, nil
 }
 
 var msgListCmd = &cobra.Command{
@@ -67,6 +119,11 @@ var msgSendCmd = &cobra.Command{
 		}
 
 		if filePath != "" {
+			localMeta, err := sniffLocalMediaMetadata(filePath)
+			if err != nil {
+				output.Fatal("VALIDATION_ERROR", fmt.Errorf("failed to inspect media file: %w", err))
+			}
+
 			var uploadResult struct {
 				UploadID string `json:"uploadID"`
 				FileName string `json:"fileName"`
@@ -82,14 +139,31 @@ var msgSendCmd = &cobra.Command{
 			attachment := map[string]interface{}{
 				"uploadID": uploadResult.UploadID,
 			}
-			if uploadResult.FileName != "" {
-				attachment["fileName"] = uploadResult.FileName
+
+			fileName := uploadResult.FileName
+			if fileName == "" {
+				fileName = localMeta.FileName
 			}
-			if uploadResult.MimeType != "" {
-				attachment["mimeType"] = uploadResult.MimeType
+			if fileName != "" {
+				attachment["fileName"] = fileName
 			}
-			if uploadResult.Width > 0 || uploadResult.Height > 0 {
-				attachment["size"] = map[string]int{"width": uploadResult.Width, "height": uploadResult.Height}
+
+			mimeType := uploadResult.MimeType
+			if mimeType == "" || mimeType == "application/octet-stream" {
+				mimeType = localMeta.MimeType
+			}
+			if mimeType != "" {
+				attachment["mimeType"] = mimeType
+			}
+
+			width := uploadResult.Width
+			height := uploadResult.Height
+			if width <= 0 || height <= 0 {
+				width = localMeta.Width
+				height = localMeta.Height
+			}
+			if width > 0 || height > 0 {
+				attachment["size"] = map[string]int{"width": width, "height": height}
 			}
 			if v, _ := cmd.Flags().GetString("attach-type"); v != "" {
 				attachment["type"] = v
