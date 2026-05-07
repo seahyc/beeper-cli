@@ -20,7 +20,7 @@ Send messages and manage chats across all messaging platforms via the `beeper` C
 - React/unreact to messages with emoji
 - Edit sent messages
 - Create new chats (DM or group)
-- Archive/unarchive chats
+- Archive/unarchive, mute, pin, low-priority, mark read/unread, set title/description/avatar/expiry on chats
 - Upload/download media assets
 - Set/clear chat reminders
 - Focus Beeper Desktop on a specific chat
@@ -110,6 +110,23 @@ beeper chat create --account <id> --type single --participants "userId" --messag
 beeper chat create --account <id> --type group --title "Team" --participants "id1,id2"
 beeper chat archive "!chatID:beeper.local"
 beeper chat unarchive "!chatID:beeper.local"
+beeper chat low-priority "!chatID:beeper.local"          # never floats to top, never badges
+beeper chat unlow-priority "!chatID:beeper.local"
+beeper chat mute "!chatID:beeper.local"
+beeper chat unmute "!chatID:beeper.local"
+beeper chat pin "!chatID:beeper.local"
+beeper chat unpin "!chatID:beeper.local"
+beeper chat read "!chatID:beeper.local" --message <msgID>     # --message optional
+beeper chat unread "!chatID:beeper.local" --message <msgID>   # --message optional
+beeper chat notify-anyway "!chatID:beeper.local"         # iMessage on macOS only
+beeper chat set-title "!chatID:beeper.local" "Custom title"
+beeper chat clear-title "!chatID:beeper.local"
+beeper chat set-description "!chatID:beeper.local" "Group topic"
+beeper chat clear-description "!chatID:beeper.local"
+beeper chat set-image "!chatID:beeper.local" ./avatar.png
+beeper chat clear-image "!chatID:beeper.local"
+beeper chat set-expiry "!chatID:beeper.local" 86400      # disappearing-message timer (seconds)
+beeper chat clear-expiry "!chatID:beeper.local"
 ```
 
 ### Messages

@@ -215,6 +215,199 @@ var chatUnarchiveCmd = &cobra.Command{
 	},
 }
 
+func patchChat(chatID string, body map[string]interface{}) {
+	client := api.NewClient(getBaseURL())
+	path := fmt.Sprintf("/v1/chats/%s", chatID)
+	var result interface{}
+	if err := client.Patch(path, body, &result); err != nil {
+		output.Fatal("API_ERROR", err)
+	}
+	output.JSON(result)
+}
+
+var chatLowPriorityCmd = &cobra.Command{
+	Use:   "low-priority <chatID>",
+	Short: "Mark a chat as low priority",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		patchChat(args[0], map[string]interface{}{"isLowPriority": true})
+	},
+}
+
+var chatUnlowPriorityCmd = &cobra.Command{
+	Use:   "unlow-priority <chatID>",
+	Short: "Unmark a chat as low priority",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		patchChat(args[0], map[string]interface{}{"isLowPriority": false})
+	},
+}
+
+var chatMuteCmd = &cobra.Command{
+	Use:   "mute <chatID>",
+	Short: "Mute a chat",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		patchChat(args[0], map[string]interface{}{"isMuted": true})
+	},
+}
+
+var chatUnmuteCmd = &cobra.Command{
+	Use:   "unmute <chatID>",
+	Short: "Unmute a chat",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		patchChat(args[0], map[string]interface{}{"isMuted": false})
+	},
+}
+
+var chatPinCmd = &cobra.Command{
+	Use:   "pin <chatID>",
+	Short: "Pin a chat",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		patchChat(args[0], map[string]interface{}{"isPinned": true})
+	},
+}
+
+var chatUnpinCmd = &cobra.Command{
+	Use:   "unpin <chatID>",
+	Short: "Unpin a chat",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		patchChat(args[0], map[string]interface{}{"isPinned": false})
+	},
+}
+
+var chatReadCmd = &cobra.Command{
+	Use:   "read <chatID>",
+	Short: "Mark a chat as read",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		client := api.NewClient(getBaseURL())
+		path := fmt.Sprintf("/v1/chats/%s/read", args[0])
+		body := map[string]interface{}{}
+		if v, _ := cmd.Flags().GetString("message"); v != "" {
+			body["messageID"] = v
+		}
+		var result interface{}
+		if err := client.Post(path, body, &result); err != nil {
+			output.Fatal("API_ERROR", err)
+		}
+		output.JSON(result)
+	},
+}
+
+var chatUnreadCmd = &cobra.Command{
+	Use:   "unread <chatID>",
+	Short: "Mark a chat as unread",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		client := api.NewClient(getBaseURL())
+		path := fmt.Sprintf("/v1/chats/%s/unread", args[0])
+		body := map[string]interface{}{}
+		if v, _ := cmd.Flags().GetString("message"); v != "" {
+			body["messageID"] = v
+		}
+		var result interface{}
+		if err := client.Post(path, body, &result); err != nil {
+			output.Fatal("API_ERROR", err)
+		}
+		output.JSON(result)
+	},
+}
+
+var chatNotifyAnywayCmd = &cobra.Command{
+	Use:   "notify-anyway <chatID>",
+	Short: "Force a delivery notification (iMessage/macOS only)",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		client := api.NewClient(getBaseURL())
+		path := fmt.Sprintf("/v1/chats/%s/notify-anyway", args[0])
+		var result interface{}
+		if err := client.Post(path, map[string]interface{}{}, &result); err != nil {
+			output.Fatal("API_ERROR", err)
+		}
+		output.JSON(result)
+	},
+}
+
+var chatSetTitleCmd = &cobra.Command{
+	Use:   "set-title <chatID> <title>",
+	Short: "Set a custom chat title",
+	Args:  cobra.ExactArgs(2),
+	Run: func(cmd *cobra.Command, args []string) {
+		patchChat(args[0], map[string]interface{}{"title": args[1]})
+	},
+}
+
+var chatClearTitleCmd = &cobra.Command{
+	Use:   "clear-title <chatID>",
+	Short: "Clear the custom chat title",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		patchChat(args[0], map[string]interface{}{"title": nil})
+	},
+}
+
+var chatSetDescriptionCmd = &cobra.Command{
+	Use:   "set-description <chatID> <description>",
+	Short: "Set a group chat description/topic",
+	Args:  cobra.ExactArgs(2),
+	Run: func(cmd *cobra.Command, args []string) {
+		patchChat(args[0], map[string]interface{}{"description": args[1]})
+	},
+}
+
+var chatClearDescriptionCmd = &cobra.Command{
+	Use:   "clear-description <chatID>",
+	Short: "Clear a group chat description/topic",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		patchChat(args[0], map[string]interface{}{"description": nil})
+	},
+}
+
+var chatSetImageCmd = &cobra.Command{
+	Use:   "set-image <chatID> <imagePath>",
+	Short: "Set a group chat avatar (local filesystem path)",
+	Args:  cobra.ExactArgs(2),
+	Run: func(cmd *cobra.Command, args []string) {
+		patchChat(args[0], map[string]interface{}{"imgURL": args[1]})
+	},
+}
+
+var chatClearImageCmd = &cobra.Command{
+	Use:   "clear-image <chatID>",
+	Short: "Clear the group chat avatar",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		patchChat(args[0], map[string]interface{}{"imgURL": nil})
+	},
+}
+
+var chatSetExpiryCmd = &cobra.Command{
+	Use:   "set-expiry <chatID> <seconds>",
+	Short: "Set the disappearing-message timer in seconds",
+	Args:  cobra.ExactArgs(2),
+	Run: func(cmd *cobra.Command, args []string) {
+		var secs int
+		if _, err := fmt.Sscanf(args[1], "%d", &secs); err != nil || secs < 0 {
+			output.Fatal("VALIDATION_ERROR", fmt.Errorf("seconds must be a non-negative integer"))
+		}
+		patchChat(args[0], map[string]interface{}{"messageExpirySeconds": secs})
+	},
+}
+
+var chatClearExpiryCmd = &cobra.Command{
+	Use:   "clear-expiry <chatID>",
+	Short: "Clear the disappearing-message timer",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		patchChat(args[0], map[string]interface{}{"messageExpirySeconds": nil})
+	},
+}
+
 func init() {
 	chatListCmd.Flags().Int("limit", 0, "Max results")
 	chatListCmd.Flags().String("cursor", "", "Pagination cursor")
@@ -249,5 +442,20 @@ func init() {
 	chatCreateCmd.Flags().String("message", "", "Initial message text")
 	chatCreateCmd.Flags().Bool("allow-invite", false, "Allow invite")
 
-	chatCmd.AddCommand(chatListCmd, chatGetCmd, chatSearchCmd, chatCreateCmd, chatArchiveCmd, chatUnarchiveCmd)
+	chatReadCmd.Flags().String("message", "", "Optional message ID to mark read through")
+	chatUnreadCmd.Flags().String("message", "", "Optional message ID to mark unread from")
+
+	chatCmd.AddCommand(
+		chatListCmd, chatGetCmd, chatSearchCmd, chatCreateCmd,
+		chatArchiveCmd, chatUnarchiveCmd,
+		chatLowPriorityCmd, chatUnlowPriorityCmd,
+		chatMuteCmd, chatUnmuteCmd,
+		chatPinCmd, chatUnpinCmd,
+		chatReadCmd, chatUnreadCmd,
+		chatNotifyAnywayCmd,
+		chatSetTitleCmd, chatClearTitleCmd,
+		chatSetDescriptionCmd, chatClearDescriptionCmd,
+		chatSetImageCmd, chatClearImageCmd,
+		chatSetExpiryCmd, chatClearExpiryCmd,
+	)
 }

@@ -8,6 +8,7 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -44,6 +45,10 @@ func (c *Client) Post(path string, body, result interface{}) error {
 
 func (c *Client) Put(path string, body, result interface{}) error {
 	return c.doRequest("PUT", path, body, result, true)
+}
+
+func (c *Client) Patch(path string, body, result interface{}) error {
+	return c.doRequest("PATCH", path, body, result, true)
 }
 
 func (c *Client) Delete(path string, result interface{}) error {
@@ -127,9 +132,28 @@ func (c *Client) UploadFile(path, filePath string, result interface{}) error {
 	}
 	defer file.Close()
 
+	contentType := mime.TypeByExtension(strings.ToLower(filepath.Ext(filePath)))
+	if contentType == "" {
+		header := make([]byte, 512)
+		n, err := file.Read(header)
+		if err != nil && err != io.EOF {
+			return fmt.Errorf("failed to sniff file content type: %w", err)
+		}
+		contentType = http.DetectContentType(header[:n])
+		if _, err := file.Seek(0, 0); err != nil {
+			return fmt.Errorf("failed to rewind file after sniffing: %w", err)
+		}
+	}
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
-	part, err := writer.CreateFormFile("file", filepath.Base(filePath))
+	partHeader := textproto.MIMEHeader{}
+	partHeader.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename="%s"`, filepath.Base(filePath)))
+	partHeader.Set("Content-Type", contentType)
+	part, err := writer.CreatePart(partHeader)
 	if err != nil {
 		return fmt.Errorf("failed to create form file: %w", err)
 	}
