@@ -2,7 +2,7 @@
 
 CLI for the local [Beeper Desktop](https://www.beeper.com/) HTTP API.
 
-`beeper-cli` lets you search chats, read messages, send messages with attachments, react/edit, manage reminders, upload/download media, and work across connected messaging accounts from the terminal.
+`beeper-cli` lets you search chats, read messages, send messages with attachments, react/edit/delete, manage reminders, upload/download media, and work across connected messaging accounts from the terminal.
 
 It talks to the Beeper Desktop app running on your machine. It is not a hosted service and does not work unless Beeper Desktop is running locally.
 
@@ -17,6 +17,7 @@ It talks to the Beeper Desktop app running on your machine. It is not a hosted s
 - Send text messages and messages with file attachments
 - Reply to a specific message
 - Edit sent messages
+- Delete sent messages
 - React and unreact to messages
 - Upload files and base64 content as Beeper assets
 - Download cached media assets
@@ -141,13 +142,16 @@ beeper msg send "!chatID:beeper.local" --text "Following up on this" --reply-to 
 - `beeper chat create --account <id> --type group ...`
 - `beeper chat archive "!chatID:beeper.local"`
 - `beeper chat unarchive "!chatID:beeper.local"`
+- `beeper chat pinned "!chatID:beeper.local"`
 
 ### Messages
 
 - `beeper msg list "!chatID:beeper.local" --limit 20`
 - `beeper msg search "keyword" --chat "!chatID:beeper.local" --limit 20`
+- `beeper msg search "keyword" --chat "!chatID:beeper.local" --local --pages 40`
 - `beeper msg send "!chatID:beeper.local" --text "Hello"`
 - `beeper msg edit "!chatID:beeper.local" "msgID" --text "Edited"`
+- `beeper msg delete "!chatID:beeper.local" "msgID"`
 - `beeper msg react "!chatID:beeper.local" "msgID" '👍'`
 - `beeper msg unreact "!chatID:beeper.local" "msgID" '👍'`
 
@@ -228,8 +232,10 @@ This flow has been verified for:
 
 - Chat IDs look like `!abc123:beeper.local`
 - The CLI URL-encodes Beeper path identifiers internally; quoting chat IDs in shell commands is still recommended
-- `msg search --limit` is effectively capped by the Beeper Desktop API at `20`
-- `msg edit`, `msg react`, and `msg unreact` should use the numeric message ID from `msg list`
+- `msg search --limit` is effectively capped by the Beeper Desktop API at `20`; chat-scoped searches fall back to local history scanning when the API rejects the query or ignores `--chat`
+- Use `msg search --local --chat ... --pages N` when you need deterministic scoped search over older chat history
+- `chat pinned` probes known Beeper Desktop pinned-message endpoints and reports `supported: false` when the local API does not expose pinned messages
+- `msg edit`, `msg delete`, `msg react`, and `msg unreact` should use the numeric message ID from `msg list`
 - `asset download` understands both Beeper response shapes: `url` and `srcURL`
 - `asset serve` returns a local file path, not a remote URL
 - If you omit `--output` for `asset serve`, it writes to a temp file

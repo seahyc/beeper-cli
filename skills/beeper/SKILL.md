@@ -3,7 +3,7 @@ name: beeper
 description: >
   Send messages and search chats across WhatsApp, Telegram, Signal, Discord, Slack,
   Instagram, iMessage, LinkedIn, Facebook Messenger, Google Messages via Beeper Desktop API.
-  Reactions, reminders, attachments, media download, contact search, edit messages,
+  Reactions, reminders, attachments, media download, contact search, edit/delete messages,
   create chats, unified search. Use when user asks about messages, chats, contacts,
   or wants to send/read/search messages across any messaging platform.
 ---
@@ -18,7 +18,7 @@ Send messages and manage chats across all messaging platforms via the `beeper` C
 - Search messages and chats across all connected accounts
 - List and manage connected accounts (WhatsApp, Telegram, Signal, Discord, Slack, iMessage, etc.)
 - React/unreact to messages with emoji
-- Edit sent messages
+- Edit/delete sent messages
 - Create new chats (DM or group)
 - Archive/unarchive, mute, pin, low-priority, mark read/unread, set title/description/avatar/expiry on chats
 - Upload/download media assets
@@ -47,6 +47,7 @@ beeper msg list "!chatID:beeper.local" --limit 10
 **Search messages:**
 ```bash
 beeper msg search "keyword" --chat "!chatID:beeper.local" --limit 20
+beeper msg search "keyword" --chat "!chatID:beeper.local" --local --pages 40
 ```
 
 **Download media to a specific file:**
@@ -72,6 +73,11 @@ beeper msg unreact "!chatID:beeper.local" "msgID"
 **Edit message:**
 ```bash
 beeper msg edit "!chatID:beeper.local" "msgID" --text "Updated text"
+```
+
+**Delete message:**
+```bash
+beeper msg delete "!chatID:beeper.local" "msgID"
 ```
 
 ## Commands Reference
@@ -116,6 +122,7 @@ beeper chat mute "!chatID:beeper.local"
 beeper chat unmute "!chatID:beeper.local"
 beeper chat pin "!chatID:beeper.local"
 beeper chat unpin "!chatID:beeper.local"
+beeper chat pinned "!chatID:beeper.local"
 beeper chat read "!chatID:beeper.local" --message <msgID>     # --message optional
 beeper chat unread "!chatID:beeper.local" --message <msgID>   # --message optional
 beeper chat notify-anyway "!chatID:beeper.local"         # iMessage on macOS only
@@ -134,7 +141,9 @@ beeper chat clear-expiry "!chatID:beeper.local"
 beeper msg list "!chatID" --limit 20 --cursor <cur> --direction before
 beeper msg send "!chatID" --text "Hello" --file ./image.png --attach-type image --filename custom.png --mime image/png
 beeper msg edit "!chatID" "msgID" --text "Edited"
+beeper msg delete "!chatID" "msgID"
 beeper msg search "query" --chat "!chatID" --account <id> --sender <id> --media --after 2024-01-01 --before 2024-12-31 --limit 20
+beeper msg search "query" --chat "!chatID" --local --pages 40 --page-size 100 --limit 20
 beeper msg react "!chatID" "msgID" '🎉'
 beeper msg unreact "!chatID" "msgID"
 ```
@@ -225,8 +234,10 @@ Common codes:
 - `beeper asset download` understands both Beeper response shapes: `url` and `srcURL`
 - `beeper asset serve` writes served bytes to disk and returns `savedPath`, `contentType`, and `size`; if `--output` is omitted, it uses a temp file
 - `--output` accepts either an explicit file path or a directory path. If you want directory behavior for a new directory, end it with a trailing slash such as `./downloads/`
-- `beeper msg search --limit` is effectively capped by the Beeper Desktop API at `20`
-- When editing messages, use the **numeric message ID** from `msg list` (e.g. `29463`), not the `pendingMessageID` returned by `msg send` (e.g. `~beeper-mautrix-go_...`). The pending ID is temporary and won't resolve for edits.
+- `beeper msg search --limit` is effectively capped by the Beeper Desktop API at `20`; chat-scoped searches automatically fall back to local history scanning if the API rejects the query or ignores `--chat`
+- Use `beeper msg search --local --chat ... --pages N` when a chat has important older context, pinned-message content, or multi-word terms that the Desktop API search handles poorly
+- `beeper chat pinned` probes known Beeper Desktop pinned-message endpoints. If the app does not expose pinned messages through the local API, it returns `supported: false` with the endpoints tried.
+- When editing or deleting messages, use the **numeric message ID** from `msg list` (e.g. `29463`), not the `pendingMessageID` returned by `msg send` (e.g. `~beeper-mautrix-go_...`). The pending ID is temporary and won't resolve for edits/deletes.
 - The `--url` global flag or `BEEPER_URL` env var overrides the default `http://localhost:23373`
 - Beeper Desktop must be running for any command to work
 - First authenticated command will open browser for OAuth — subsequent commands use cached token

@@ -119,6 +119,9 @@ func (c *Client) doRequestInner(method, path string, body, result interface{}, n
 	}
 
 	if result != nil {
+		if len(respBody) == 0 {
+			return nil
+		}
 		return json.Unmarshal(respBody, result)
 	}
 	return nil

@@ -279,6 +279,43 @@ var chatUnpinCmd = &cobra.Command{
 	},
 }
 
+var chatPinnedCmd = &cobra.Command{
+	Use:   "pinned <chatID>",
+	Short: "List pinned messages in a chat when exposed by Beeper Desktop",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		client := api.NewClient(getBaseURL())
+		chatID := args[0]
+		encodedChatID := encodeChatID(chatID)
+		candidates := []string{
+			fmt.Sprintf("/v1/chats/%s/pinned", encodedChatID),
+			fmt.Sprintf("/v1/chats/%s/pinned-messages", encodedChatID),
+			fmt.Sprintf("/v1/chats/%s/messages/pinned", encodedChatID),
+		}
+		errors := map[string]string{}
+		for _, path := range candidates {
+			var result interface{}
+			if err := client.Get(path, &result); err != nil {
+				errors[path] = err.Error()
+				continue
+			}
+			output.JSON(map[string]interface{}{
+				"chatID":   chatID,
+				"endpoint": path,
+				"result":   result,
+			})
+			return
+		}
+		output.JSON(map[string]interface{}{
+			"chatID":    chatID,
+			"supported": false,
+			"message":   "Beeper Desktop did not expose pinned messages on the known local API endpoints.",
+			"tried":     candidates,
+			"errors":    errors,
+		})
+	},
+}
+
 var chatReadCmd = &cobra.Command{
 	Use:   "read <chatID>",
 	Short: "Mark a chat as read",
@@ -450,7 +487,7 @@ func init() {
 		chatArchiveCmd, chatUnarchiveCmd,
 		chatLowPriorityCmd, chatUnlowPriorityCmd,
 		chatMuteCmd, chatUnmuteCmd,
-		chatPinCmd, chatUnpinCmd,
+		chatPinCmd, chatUnpinCmd, chatPinnedCmd,
 		chatReadCmd, chatUnreadCmd,
 		chatNotifyAnywayCmd,
 		chatSetTitleCmd, chatClearTitleCmd,

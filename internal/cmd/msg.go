@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"html"
 	"image"
 	_ "image/gif"
 	_ "image/jpeg"
@@ -125,11 +126,11 @@ var msgSendCmd = &cobra.Command{
 			}
 
 			var uploadResult struct {
-				UploadID string `json:"uploadID"`
-				FileName string `json:"fileName"`
-				MimeType string `json:"mimeType"`
-				Width    int    `json:"width"`
-				Height   int    `json:"height"`
+				UploadID string  `json:"uploadID"`
+				FileName string  `json:"fileName"`
+				MimeType string  `json:"mimeType"`
+				Width    int     `json:"width"`
+				Height   int     `json:"height"`
 				Duration float64 `json:"duration"`
 			}
 			if err := client.UploadFile("/v1/assets/upload", filePath, &uploadResult); err != nil {
@@ -210,12 +211,44 @@ var msgEditCmd = &cobra.Command{
 	},
 }
 
+var msgDeleteCmd = &cobra.Command{
+	Use:     "delete <chatID> <msgID>",
+	Aliases: []string{"del", "rm"},
+	Short:   "Delete a message",
+	Args:    cobra.ExactArgs(2),
+	Run: func(cmd *cobra.Command, args []string) {
+		client := api.NewClient(getBaseURL())
+		path := fmt.Sprintf("/v1/chats/%s/messages/%s", encodeChatID(args[0]), url.PathEscape(args[1]))
+		var result interface{}
+		if err := client.Delete(path, &result); err != nil {
+			output.Fatal("API_ERROR", err)
+		}
+		if result == nil {
+			result = map[string]interface{}{
+				"success":   true,
+				"chatID":    args[0],
+				"messageID": args[1],
+			}
+		}
+		output.JSON(result)
+	},
+}
+
 var msgSearchCmd = &cobra.Command{
 	Use:   "search <query>",
 	Short: "Search messages",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		client := api.NewClient(getBaseURL())
+		if local, _ := cmd.Flags().GetBool("local"); local {
+			result, err := runLocalMessageSearch(cmd, client, args[0])
+			if err != nil {
+				output.Fatal("API_ERROR", err)
+			}
+			output.JSON(result)
+			return
+		}
+
 		params := url.Values{}
 		params.Set("query", args[0])
 		if v, _ := cmd.Flags().GetString("chat"); v != "" {
@@ -257,10 +290,190 @@ var msgSearchCmd = &cobra.Command{
 		path := "/v1/messages/search?" + params.Encode()
 		var result interface{}
 		if err := client.Get(path, &result); err != nil {
+			chatID, _ := cmd.Flags().GetString("chat")
+			if chatID != "" && strings.Contains(err.Error(), "VALIDATION_ERROR") {
+				result, err := runLocalMessageSearch(cmd, client, args[0])
+				if err != nil {
+					output.Fatal("API_ERROR", err)
+				}
+				output.JSON(result)
+				return
+			}
 			output.Fatal("API_ERROR", err)
+		}
+		if chatID, _ := cmd.Flags().GetString("chat"); chatID != "" && !messageSearchResultScoped(result, chatID) {
+			result, err := runLocalMessageSearch(cmd, client, args[0])
+			if err != nil {
+				output.Fatal("API_ERROR", err)
+			}
+			output.JSON(result)
+			return
 		}
 		output.JSON(result)
 	},
+}
+
+func runLocalMessageSearch(cmd *cobra.Command, client *api.Client, query string) (map[string]interface{}, error) {
+	chatID, _ := cmd.Flags().GetString("chat")
+	if chatID == "" {
+		return nil, fmt.Errorf("--local requires --chat")
+	}
+
+	limit, _ := cmd.Flags().GetInt("limit")
+	if limit <= 0 {
+		limit = 20
+	}
+	pageSize, _ := cmd.Flags().GetInt("page-size")
+	if pageSize <= 0 {
+		pageSize = 100
+	}
+	pages, _ := cmd.Flags().GetInt("pages")
+	if pages <= 0 {
+		pages = 10
+	}
+	cursor, _ := cmd.Flags().GetString("cursor")
+	direction, _ := cmd.Flags().GetString("direction")
+	if direction == "" {
+		direction = "before"
+	}
+	mediaOnly, _ := cmd.Flags().GetBool("media")
+
+	items := []interface{}{}
+	searchedPages := 0
+	hasMore := false
+	var newestCursor, oldestCursor string
+
+	for searchedPages < pages && len(items) < limit {
+		params := url.Values{}
+		params.Set("limit", fmt.Sprintf("%d", pageSize))
+		params.Set("direction", direction)
+		if cursor != "" {
+			params.Set("cursor", cursor)
+		}
+
+		path := fmt.Sprintf("/v1/chats/%s/messages?%s", encodeChatID(chatID), params.Encode())
+		var page map[string]interface{}
+		if err := client.Get(path, &page); err != nil {
+			return nil, err
+		}
+		searchedPages++
+
+		pageItems, _ := page["items"].([]interface{})
+		for _, item := range pageItems {
+			message, ok := item.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if mediaOnly && !messageHasMedia(message) {
+				continue
+			}
+			if messageMatchesQuery(message, query) {
+				items = append(items, item)
+				if len(items) >= limit {
+					break
+				}
+			}
+		}
+
+		hasMore, _ = page["hasMore"].(bool)
+		newestCursor, _ = page["newestCursor"].(string)
+		oldestCursor, _ = page["oldestCursor"].(string)
+		if !hasMore {
+			break
+		}
+		nextCursor := oldestCursor
+		if direction == "after" {
+			nextCursor = newestCursor
+		}
+		if nextCursor == "" || nextCursor == cursor {
+			break
+		}
+		cursor = nextCursor
+	}
+
+	return map[string]interface{}{
+		"mode":          "local",
+		"query":         query,
+		"chatID":        chatID,
+		"items":         items,
+		"hasMore":       hasMore,
+		"newestCursor":  newestCursor,
+		"oldestCursor":  oldestCursor,
+		"searchedPages": searchedPages,
+		"pageSize":      pageSize,
+		"limit":         limit,
+	}, nil
+}
+
+func messageMatchesQuery(message map[string]interface{}, query string) bool {
+	needle := normalizeMessageSearchText(query)
+	if needle == "" {
+		return true
+	}
+	return strings.Contains(normalizeMessageSearchText(messageSearchHaystack(message)), needle)
+}
+
+func messageSearchHaystack(message map[string]interface{}) string {
+	parts := []string{}
+	for _, key := range []string{"text", "senderName", "senderID", "type"} {
+		if v, ok := message[key].(string); ok {
+			parts = append(parts, v)
+		}
+	}
+	if attachments, ok := message["attachments"].([]interface{}); ok {
+		for _, raw := range attachments {
+			attachment, ok := raw.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			for _, key := range []string{"fileName", "mimeType", "type"} {
+				if v, ok := attachment[key].(string); ok {
+					parts = append(parts, v)
+				}
+			}
+		}
+	}
+	return strings.Join(parts, "\n")
+}
+
+func normalizeMessageSearchText(s string) string {
+	s = html.UnescapeString(s)
+	replacer := strings.NewReplacer(
+		"<br>", "\n",
+		"<br/>", "\n",
+		"<br />", "\n",
+		"</p>", "\n",
+		"<p>", "\n",
+		"&nbsp;", " ",
+	)
+	return strings.ToLower(replacer.Replace(s))
+}
+
+func messageHasMedia(message map[string]interface{}) bool {
+	attachments, ok := message["attachments"].([]interface{})
+	return ok && len(attachments) > 0
+}
+
+func messageSearchResultScoped(result interface{}, chatID string) bool {
+	resultMap, ok := result.(map[string]interface{})
+	if !ok {
+		return true
+	}
+	items, ok := resultMap["items"].([]interface{})
+	if !ok {
+		return true
+	}
+	for _, raw := range items {
+		item, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		itemChatID, _ := item["chatID"].(string)
+		if itemChatID != "" && itemChatID != chatID {
+			return false
+		}
+	}
+	return true
 }
 
 var msgReactCmd = &cobra.Command{
@@ -321,6 +534,9 @@ func init() {
 	msgSearchCmd.Flags().String("direction", "", "Pagination direction")
 	msgSearchCmd.Flags().Bool("exclude-low-priority", false, "Exclude low priority")
 	msgSearchCmd.Flags().Bool("muted", false, "Only muted chats")
+	msgSearchCmd.Flags().Bool("local", false, "Search by scanning chat history; requires --chat")
+	msgSearchCmd.Flags().Int("pages", 10, "Max history pages to scan for local search/API fallback")
+	msgSearchCmd.Flags().Int("page-size", 100, "Messages per page for local search/API fallback")
 
-	msgCmd.AddCommand(msgListCmd, msgSendCmd, msgEditCmd, msgSearchCmd, msgReactCmd, msgUnreactCmd)
+	msgCmd.AddCommand(msgListCmd, msgSendCmd, msgEditCmd, msgDeleteCmd, msgSearchCmd, msgReactCmd, msgUnreactCmd)
 }
