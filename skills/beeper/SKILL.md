@@ -4,8 +4,9 @@ description: >
   Send messages and search chats across WhatsApp, Telegram, Signal, Discord, Slack,
   Instagram, iMessage, LinkedIn, Facebook Messenger, Google Messages via Beeper Desktop API.
   Reactions, reminders, attachments, media download, contact search, edit/delete messages,
-  create chats, unified search. Use when user asks about messages, chats, contacts,
-  or wants to send/read/search messages across any messaging platform.
+  parse poll question/options, create chats, unified search. Use when user asks about
+  messages, chats, contacts, polls, or wants to send/read/search messages across any
+  messaging platform.
 ---
 
 # Beeper CLI Skill
@@ -19,6 +20,7 @@ Send messages and manage chats across all messaging platforms via the `beeper` C
 - List and manage connected accounts (WhatsApp, Telegram, Signal, Discord, Slack, iMessage, etc.)
 - React/unreact to messages with emoji
 - Edit/delete sent messages
+- Parse poll question/options from Beeper-rendered chat history
 - Create new chats (DM or group)
 - Archive/unarchive, mute, pin, low-priority, mark read/unread, set title/description/avatar/expiry on chats
 - Upload/download media assets
@@ -78,6 +80,11 @@ beeper msg edit "!chatID:beeper.local" "msgID" --text "Updated text"
 **Delete message:**
 ```bash
 beeper msg delete "!chatID:beeper.local" "msgID"
+```
+
+**List polls in a chat:**
+```bash
+beeper poll list "!chatID:beeper.local" --limit 10
 ```
 
 ## Commands Reference
@@ -148,6 +155,14 @@ beeper msg react "!chatID" "msgID" '🎉'
 beeper msg unreact "!chatID" "msgID"
 ```
 
+### Polls
+```bash
+beeper poll list "!chatID" --limit 10
+beeper poll list "!chatID" --pages 20 --page-size 100
+```
+
+`poll list` scans chat history and extracts poll question/options from messages where Beeper renders a WhatsApp poll as HTML text. It reports `voteCountsAvailable: false` because the Beeper Desktop API does not expose live poll votes or voter names.
+
 ### Unified Search
 ```bash
 beeper search "query"          # Search across chats and messages
@@ -209,6 +224,39 @@ beeper asset serve --url "mxc://beeper.local/abc123?encryptedFileInfoJSON=..." -
 beeper msg send "!chatID:beeper.local" --text "Check this out!" --file ./photo.jpg
 ```
 
+### Work with WhatsApp polls
+
+Use `beeper poll list` first when the user only needs to find poll messages or recover their question/options:
+
+```bash
+beeper poll list "!chatID:beeper.local" --limit 5
+```
+
+Beeper Desktop's local API currently does not expose native poll creation, live vote counts, or voter names. For those, use WhatsApp Web or the native WhatsApp app.
+
+Preferred Codex workflow for native WhatsApp polls:
+
+- Use an authenticated WhatsApp Web session in Chrome when available.
+- Search/open the target chat by title and verify the visible chat title before sending.
+- Create the poll through WhatsApp's native poll UI rather than sending plain text.
+- Keep each poll to at most 12 options; WhatsApp rejected larger polls in practice.
+- Enable "Allow multiple answers" when the poll is an RSVP checklist or multi-select task.
+- Read live results from WhatsApp Web's rendered poll UI; use "View votes" when voter-level details are needed.
+- Treat poll sending as an external side effect. Re-check the question, all options, and the target chat before pressing Send.
+
+Useful WhatsApp Web selectors observed in practice:
+
+```text
+input[aria-label="Search or start a new chat"]
+button[aria-label="Attach"]
+Poll menu item
+[data-testid="poll-question-input"]
+[data-testid^="poll-option-input-"]
+[data-testid="poll-send-button"]
+```
+
+Avoid coordinate-only automation for WhatsApp polls when DOM/browser automation is available. Native WhatsApp Desktop has no stable public local poll API, and Beeper's local API does not currently create native polls.
+
 ## Error Handling
 
 All errors return JSON:
@@ -237,6 +285,7 @@ Common codes:
 - `beeper msg search --limit` is effectively capped by the Beeper Desktop API at `20`; chat-scoped searches automatically fall back to local history scanning if the API rejects the query or ignores `--chat`
 - Use `beeper msg search --local --chat ... --pages N` when a chat has important older context, pinned-message content, or multi-word terms that the Desktop API search handles poorly
 - `beeper chat pinned` probes known Beeper Desktop pinned-message endpoints. If the app does not expose pinned messages through the local API, it returns `supported: false` with the endpoints tried.
+- `beeper poll list` parses poll question/options only. Native poll creation, live vote counts, and voter names require WhatsApp Web/native WhatsApp because Beeper Desktop exposes poll messages as text.
 - When editing or deleting messages, use the **numeric message ID** from `msg list` (e.g. `29463`), not the `pendingMessageID` returned by `msg send` (e.g. `~beeper-mautrix-go_...`). The pending ID is temporary and won't resolve for edits/deletes.
 - The `--url` global flag or `BEEPER_URL` env var overrides the default `http://localhost:23373`
 - Beeper Desktop must be running for any command to work

@@ -14,6 +14,7 @@ It talks to the Beeper Desktop app running on your machine. It is not a hosted s
 - List chats, inspect chat metadata, create chats, archive/unarchive chats
 - Read messages in a chat
 - Search messages across chats
+- List poll messages and parse their question/options from chat history
 - Send text messages and messages with file attachments
 - Reply to a specific message
 - Edit sent messages
@@ -113,6 +114,12 @@ Send a message with an image:
 beeper msg send "!chatID:beeper.local" --text "See attached" --file ./photo.jpg
 ```
 
+List recent polls in a chat:
+
+```bash
+beeper poll list "!chatID:beeper.local" --limit 10
+```
+
 Reply to a specific message:
 
 ```bash
@@ -154,6 +161,11 @@ beeper msg send "!chatID:beeper.local" --text "Following up on this" --reply-to 
 - `beeper msg delete "!chatID:beeper.local" "msgID"`
 - `beeper msg react "!chatID:beeper.local" "msgID" '👍'`
 - `beeper msg unreact "!chatID:beeper.local" "msgID" '👍'`
+
+### Polls
+
+- `beeper poll list "!chatID:beeper.local" --limit 10`
+- `beeper poll list "!chatID:beeper.local" --pages 20 --page-size 100`
 
 ### Assets / Media
 
@@ -228,6 +240,30 @@ This flow has been verified for:
 - PDFs/files
 - encrypted WhatsApp video
 
+## Poll Behavior
+
+`beeper poll list` scans chat history and extracts poll question/options from messages where Beeper Desktop renders a WhatsApp poll as HTML text.
+
+Example:
+
+```bash
+beeper poll list "!chatID:beeper.local" --limit 5
+```
+
+Typical output includes:
+
+```json
+{
+  "messageID": "94457",
+  "question": "RSVP: who has confirmed?",
+  "options": ["Alice", "Bob"],
+  "source": "beeper_api_text",
+  "voteCountsAvailable": false
+}
+```
+
+Beeper Desktop's local API currently exposes WhatsApp polls as text only. It does not expose native poll creation, live vote counts, or voter names. Use WhatsApp Web or the native WhatsApp app for those operations.
+
 ## Notes and Caveats
 
 - Chat IDs look like `!abc123:beeper.local`
@@ -235,6 +271,7 @@ This flow has been verified for:
 - `msg search --limit` is effectively capped by the Beeper Desktop API at `20`; chat-scoped searches fall back to local history scanning when the API rejects the query or ignores `--chat`
 - Use `msg search --local --chat ... --pages N` when you need deterministic scoped search over older chat history
 - `chat pinned` probes known Beeper Desktop pinned-message endpoints and reports `supported: false` when the local API does not expose pinned messages
+- `poll list` can parse poll question/options from Beeper message text, but native poll creation and live vote counts are not exposed by Beeper Desktop's local API
 - `msg edit`, `msg delete`, `msg react`, and `msg unreact` should use the numeric message ID from `msg list`
 - `asset download` understands both Beeper response shapes: `url` and `srcURL`
 - `asset serve` returns a local file path, not a remote URL
