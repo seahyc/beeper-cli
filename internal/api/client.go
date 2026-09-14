@@ -23,6 +23,13 @@ type Client struct {
 	httpClient *http.Client
 }
 
+type RawResponse struct {
+	StatusCode int
+	Status     string
+	Headers    http.Header
+	Body       []byte
+}
+
 func NewClient(baseURL string) *Client {
 	return &Client{
 		baseURL:    baseURL,
@@ -59,8 +66,58 @@ func (c *Client) DeleteWithBody(path string, body, result interface{}) error {
 	return c.doRequest("DELETE", path, body, result, true)
 }
 
+func (c *Client) Raw(method, path string, body []byte, contentType string, needsAuth bool) (*RawResponse, error) {
+	return c.rawRequest(method, path, body, contentType, needsAuth, false)
+}
+
 func (c *Client) doRequest(method, path string, body, result interface{}, needsAuth bool) error {
 	return c.doRequestInner(method, path, body, result, needsAuth, false)
+}
+
+func (c *Client) rawRequest(method, path string, body []byte, contentType string, needsAuth, isRetry bool) (*RawResponse, error) {
+	var bodyReader io.Reader
+	if body != nil {
+		bodyReader = bytes.NewReader(body)
+	}
+
+	req, err := http.NewRequest(method, c.baseURL+path, bodyReader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	if body != nil && contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+
+	if needsAuth {
+		token := auth.GetToken()
+		if !token.IsValid() {
+			auth.EnsureValidToken(c.baseURL)
+		}
+		req.Header.Set("Authorization", "Bearer "+token.AccessToken)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode == 401 && needsAuth && !isRetry {
+		auth.EnsureValidToken(c.baseURL)
+		return c.rawRequest(method, path, body, contentType, true, true)
+	}
+
+	return &RawResponse{
+		StatusCode: resp.StatusCode,
+		Status:     resp.Status,
+		Headers:    resp.Header,
+		Body:       respBody,
+	}, nil
 }
 
 func (c *Client) doRequestInner(method, path string, body, result interface{}, needsAuth, isRetry bool) error {

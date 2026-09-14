@@ -27,6 +27,7 @@ Send messages and manage chats across all messaging platforms via the `beeper` C
 - Set/clear chat reminders
 - Focus Beeper Desktop on a specific chat
 - Search contacts on connected accounts
+- Call low-level Beeper Desktop API endpoints when a dedicated command is unavailable
 - All output is JSON
 
 ## Quick Reference
@@ -39,6 +40,11 @@ beeper msg send "!chatID:beeper.local" --text "Hello!"
 **Send with attachment:**
 ```bash
 beeper msg send "!chatID:beeper.local" --text "See attached" --file ./photo.jpg
+```
+
+**Send with a disappearing-message timer:**
+```bash
+beeper msg send "!chatID:beeper.local" --text "Secret" --disappear-after 24h
 ```
 
 **List messages:**
@@ -94,6 +100,16 @@ beeper poll list "!chatID:beeper.local" --limit 10
 beeper info                    # Server/app metadata (no auth required)
 ```
 
+### Raw API
+```bash
+beeper api get /v1/info --no-auth
+beeper api get '/v1/chats?limit=5'
+beeper api post /v1/chats/<encoded-chat-id>/messages --body '{"text":"Hello"}'
+```
+
+`beeper api` accepts relative Beeper API paths only. Use the global `--url` or
+`BEEPER_URL` setting to target a different Beeper Desktop API host.
+
 ### Authentication
 ```bash
 beeper auth status             # Check auth status and API reachability
@@ -139,7 +155,7 @@ beeper chat set-description "!chatID:beeper.local" "Group topic"
 beeper chat clear-description "!chatID:beeper.local"
 beeper chat set-image "!chatID:beeper.local" ./avatar.png
 beeper chat clear-image "!chatID:beeper.local"
-beeper chat set-expiry "!chatID:beeper.local" 86400      # disappearing-message timer (seconds)
+beeper chat set-expiry "!chatID:beeper.local" 24h        # disappearing-message timer (seconds or duration)
 beeper chat clear-expiry "!chatID:beeper.local"
 ```
 
@@ -147,6 +163,7 @@ beeper chat clear-expiry "!chatID:beeper.local"
 ```bash
 beeper msg list "!chatID" --limit 20 --cursor <cur> --direction before
 beeper msg send "!chatID" --text "Hello" --file ./image.png --attach-type image --filename custom.png --mime image/png
+beeper msg send "!chatID" --text "Secret" --disappear-after 24h
 beeper msg edit "!chatID" "msgID" --text "Edited"
 beeper msg delete "!chatID" "msgID"
 beeper msg search "query" --chat "!chatID" --account <id> --sender <id> --media --after 2024-01-01 --before 2024-12-31 --limit 20
@@ -223,6 +240,22 @@ beeper asset serve --url "mxc://beeper.local/abc123?encryptedFileInfoJSON=..." -
 ```bash
 beeper msg send "!chatID:beeper.local" --text "Check this out!" --file ./photo.jpg
 ```
+
+### Send one disappearing message
+```bash
+beeper msg send "!chatID:beeper.local" --text "Secret" --disappear-after 24h
+```
+
+`--disappear-after` accepts plain seconds or Go-style durations like `30m`,
+`1h`, and `24h`. It sets the chat disappearing-message timer, sends the
+message, then restores the previous chat timer.
+
+Use this one-shot command for sensitive content instead of manually calling
+`chat set-expiry` and then `msg send`. The CLI is fail-closed: it validates the
+chat's advertised timer list and verifies Beeper Desktop actually applied the
+timer before sending. If the bridge rejects or silently ignores the timer, the
+message is not sent. Do not claim a message is disappearing unless this command
+or `chat set-expiry` returns success with a non-null `messageExpirySeconds`.
 
 ### Work with WhatsApp polls
 

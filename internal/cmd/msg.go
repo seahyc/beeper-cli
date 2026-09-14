@@ -110,6 +110,7 @@ var msgSendCmd = &cobra.Command{
 		text, _ := cmd.Flags().GetString("text")
 		filePath, _ := cmd.Flags().GetString("file")
 		replyTo, _ := cmd.Flags().GetString("reply-to")
+		disappearAfter, _ := cmd.Flags().GetString("disappear-after")
 
 		body := map[string]interface{}{}
 		if text != "" {
@@ -182,13 +183,77 @@ var msgSendCmd = &cobra.Command{
 			output.Fatal("VALIDATION_ERROR", fmt.Errorf("--text or --file is required"))
 		}
 
-		path := fmt.Sprintf("/v1/chats/%s/messages", encodeChatID(args[0]))
-		var result interface{}
-		if err := client.Post(path, body, &result); err != nil {
+		if disappearAfter != "" {
+			result, err := sendMessageWithDisappearingTimer(client, args[0], body, disappearAfter)
+			if err != nil {
+				if isValidationError(err) {
+					output.Fatal("VALIDATION_ERROR", err)
+				}
+				output.Fatal("API_ERROR", err)
+			}
+			output.JSON(result)
+			return
+		}
+
+		result, err := sendMessage(client, args[0], body)
+		if err != nil {
 			output.Fatal("API_ERROR", err)
 		}
 		output.JSON(result)
 	},
+}
+
+func sendMessage(client *api.Client, chatID string, body map[string]interface{}) (interface{}, error) {
+	path := fmt.Sprintf("/v1/chats/%s/messages", encodeChatID(chatID))
+	var result interface{}
+	if err := client.Post(path, body, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func sendMessageWithDisappearingTimer(client *api.Client, chatID string, body map[string]interface{}, rawDuration string) (map[string]interface{}, error) {
+	seconds, err := parseExpirySeconds(rawDuration)
+	if err != nil {
+		return nil, asValidationError(err)
+	}
+
+	chat, err := getChat(client, chatID)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateChatExpiry(chat, seconds); err != nil {
+		return nil, asValidationError(err)
+	}
+
+	previous := chatExpirySeconds(chat)
+	setResult, err := setChatExpiry(client, chatID, &seconds)
+	if err != nil {
+		return nil, err
+	}
+
+	message, sendErr := sendMessage(client, chatID, body)
+	restoreResult, restoreErr := setChatExpiry(client, chatID, previous)
+	if sendErr != nil {
+		if restoreErr != nil {
+			return nil, fmt.Errorf("send failed after setting disappearing timer, and restore failed: send=%v restore=%v", sendErr, restoreErr)
+		}
+		return nil, sendErr
+	}
+
+	response := map[string]interface{}{
+		"message": message,
+		"disappearing": map[string]interface{}{
+			"requestedSeconds": seconds,
+			"previousSeconds":  expiryValue(previous),
+			"setResult":        setResult,
+			"restoreResult":    restoreResult,
+		},
+	}
+	if restoreErr != nil {
+		response["warning"] = fmt.Sprintf("message sent, but failed to restore previous disappearing timer: %v", restoreErr)
+	}
+	return response, nil
 }
 
 var msgEditCmd = &cobra.Command{
@@ -519,6 +584,7 @@ func init() {
 	msgSendCmd.Flags().String("attach-type", "", "Attachment type override")
 	msgSendCmd.Flags().String("filename", "", "Override attachment filename")
 	msgSendCmd.Flags().String("mime", "", "Override attachment MIME type")
+	msgSendCmd.Flags().String("disappear-after", "", "Send under a disappearing-message timer, then restore the previous chat timer (seconds or duration like 24h)")
 
 	msgEditCmd.Flags().String("text", "", "New message text")
 

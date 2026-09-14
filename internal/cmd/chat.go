@@ -424,15 +424,27 @@ var chatClearImageCmd = &cobra.Command{
 }
 
 var chatSetExpiryCmd = &cobra.Command{
-	Use:   "set-expiry <chatID> <seconds>",
-	Short: "Set the disappearing-message timer in seconds",
+	Use:   "set-expiry <chatID> <duration>",
+	Short: "Set the disappearing-message timer",
 	Args:  cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
-		var secs int
-		if _, err := fmt.Sscanf(args[1], "%d", &secs); err != nil || secs < 0 {
-			output.Fatal("VALIDATION_ERROR", fmt.Errorf("seconds must be a non-negative integer"))
+		secs, err := parseExpirySeconds(args[1])
+		if err != nil {
+			output.Fatal("VALIDATION_ERROR", err)
 		}
-		patchChat(args[0], map[string]interface{}{"messageExpirySeconds": secs})
+		client := api.NewClient(getBaseURL())
+		chat, err := getChat(client, args[0])
+		if err != nil {
+			output.Fatal("API_ERROR", err)
+		}
+		if err := validateChatExpiry(chat, secs); err != nil {
+			output.Fatal("VALIDATION_ERROR", err)
+		}
+		result, err := setChatExpiry(client, args[0], &secs)
+		if err != nil {
+			output.Fatal("API_ERROR", err)
+		}
+		output.JSON(result)
 	},
 }
 
@@ -441,7 +453,12 @@ var chatClearExpiryCmd = &cobra.Command{
 	Short: "Clear the disappearing-message timer",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		patchChat(args[0], map[string]interface{}{"messageExpirySeconds": nil})
+		client := api.NewClient(getBaseURL())
+		result, err := setChatExpiry(client, args[0], nil)
+		if err != nil {
+			output.Fatal("API_ERROR", err)
+		}
+		output.JSON(result)
 	},
 }
 

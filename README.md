@@ -9,6 +9,7 @@ It talks to the Beeper Desktop app running on your machine. It is not a hosted s
 ## What It Can Do
 
 - Authenticate against Beeper Desktop via OAuth
+- Call low-level Beeper Desktop API endpoints when a dedicated command is unavailable
 - List connected messaging accounts
 - Search contacts on connected accounts
 - List chats, inspect chat metadata, create chats, archive/unarchive chats
@@ -16,6 +17,7 @@ It talks to the Beeper Desktop app running on your machine. It is not a hosted s
 - Search messages across chats
 - List poll messages and parse their question/options from chat history
 - Send text messages and messages with file attachments
+- Send one message under a supported disappearing-message timer
 - Reply to a specific message
 - Edit sent messages
 - Delete sent messages
@@ -108,6 +110,16 @@ Send a message:
 beeper msg send "!chatID:beeper.local" --text "Hello!"
 ```
 
+Send a message under a disappearing-message timer, restoring the previous chat timer afterward:
+
+```bash
+beeper msg send "!chatID:beeper.local" --text "Secret" --disappear-after 24h
+```
+
+`--disappear-after` is fail-closed: it validates the chat's advertised timer
+values and verifies Beeper Desktop actually applied the timer before sending.
+If the bridge rejects or silently ignores the timer, the message is not sent.
+
 Send a message with an image:
 
 ```bash
@@ -133,6 +145,11 @@ beeper msg send "!chatID:beeper.local" --text "Following up on this" --reply-to 
 - `beeper info`
 - `beeper auth status`
 - `beeper auth logout`
+- `beeper api get /v1/info --no-auth`
+- `beeper api get '/v1/chats?limit=5'`
+
+`beeper api` accepts relative Beeper API paths only. Use the global `--url` or
+`BEEPER_URL` setting when targeting a different Beeper Desktop API host.
 
 ### Accounts / Contacts
 
@@ -150,6 +167,8 @@ beeper msg send "!chatID:beeper.local" --text "Following up on this" --reply-to 
 - `beeper chat archive "!chatID:beeper.local"`
 - `beeper chat unarchive "!chatID:beeper.local"`
 - `beeper chat pinned "!chatID:beeper.local"`
+- `beeper chat set-expiry "!chatID:beeper.local" 24h`
+- `beeper chat clear-expiry "!chatID:beeper.local"`
 
 ### Messages
 
@@ -157,10 +176,16 @@ beeper msg send "!chatID:beeper.local" --text "Following up on this" --reply-to 
 - `beeper msg search "keyword" --chat "!chatID:beeper.local" --limit 20`
 - `beeper msg search "keyword" --chat "!chatID:beeper.local" --local --pages 40`
 - `beeper msg send "!chatID:beeper.local" --text "Hello"`
+- `beeper msg send "!chatID:beeper.local" --text "Secret" --disappear-after 24h`
 - `beeper msg edit "!chatID:beeper.local" "msgID" --text "Edited"`
 - `beeper msg delete "!chatID:beeper.local" "msgID"`
 - `beeper msg react "!chatID:beeper.local" "msgID" '👍'`
 - `beeper msg unreact "!chatID:beeper.local" "msgID" '👍'`
+
+For sensitive content, prefer `beeper msg send --disappear-after <duration>`
+over manually calling `chat set-expiry` and then `msg send`. The one-shot
+command fails before sending when disappearing messages are unsupported or
+Beeper Desktop no-ops the timer.
 
 ### Polls
 
